@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#123b35">
+<title>Smart Parking AI</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#172b28;background:#eef4f1}
+*{box-sizing:border-box}body{margin:0;padding:18px;max-width:720px;margin-inline:auto}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:6px 0 16px}
+h1{font-size:22px;margin:0} .sub{color:#61736e;font-size:13px;margin-top:4px}
+.card{background:white;border:1px solid #dce7e2;border-radius:16px;padding:15px;margin:12px 0;box-shadow:0 3px 12px #163c3010}
+h2{font-size:16px;margin:0 0 12px}
+video{width:100%;background:#101b18;aspect-ratio:16/9;object-fit:cover;border-radius:12px}
+.row{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px}
+button{border:0;border-radius:11px;padding:12px 14px;font-weight:700;background:#176b53;color:white;flex:1;min-width:120px}
+button.secondary{background:#e7efeb;color:#174c3d}
+button:disabled{opacity:.5}
+input{width:100%;padding:12px;border:1px solid #cad9d2;border-radius:10px;font-size:16px;margin:6px 0 12px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:#f0f6f3;border-radius:12px;padding:13px}
+.stat small{display:block;color:#64766f}.stat strong{font-size:27px}
+.status{font-size:13px;padding:9px 11px;background:#f0f6f3;border-radius:10px;color:#47645a;overflow-wrap:anywhere}
+.note{font-size:13px;color:#5c7068;line-height:1.5}
+</style>
+</head>
+<body>
+<header>
+ <div><h1>SMART PARKING AI</h1><div class="sub">Camera điện thoại · Kết nối ESP32-S3</div></div>
+ <span id="badge" style="font-size:12px;color:#946200">CHƯA KẾT NỐI</span>
+</header>
+
+<section class="card">
+ <h2>1. Camera giám sát</h2>
+ <video id="video" autoplay playsinline muted></video>
+ <div class="row">
+  <button id="start">Bật camera</button>
+  <button id="stop" class="secondary" disabled>Tắt camera</button>
+ </div>
+ <p class="note">Bản đầu tiên chỉ hiển thị hình ảnh camera. Chưa có AI nhận diện xe hoặc đọc biển số.</p>
+</section>
+
+<section class="card">
+ <h2>2. Kết nối ESP32-S3 qua Wi-Fi</h2>
+ <label for="ip">Địa chỉ IP của ESP32-S3</label>
+ <input id="ip" inputmode="decimal" placeholder="Ví dụ: 192.168.1.50">
+ <div class="row">
+  <button id="connect">Kiểm tra kết nối</button>
+ </div>
+ <div id="connection" class="status" style="margin-top:10px">Chưa kiểm tra kết nối.</div>
+ <p class="note">Điện thoại và ESP32-S3 cần ở cùng mạng Wi-Fi. ESP32 phải được lập trình có máy chủ HTTP nhận dữ liệu; chỉ nhập IP thôi chưa đủ để kết nối.</p>
+</section>
+
+<section class="card">
+ <h2>3. Dữ liệu bãi xe (thử nghiệm)</h2>
+ <div class="stats">
+  <div class="stat"><small>Số xe phát hiện</small><strong id="cars">0</strong></div>
+  <div class="stat"><small>Số xe đang chờ</small><strong id="queue">0</strong></div>
+ </div>
+ <label for="count" style="display:block;margin-top:12px">Số xe thử gửi</label>
+ <input id="count" type="number" min="0" max="99" value="1">
+ <div class="row"><button id="send" class="secondary">Gửi dữ liệu thử đến ESP32</button></div>
+ <div id="result" class="status" style="margin-top:10px">Chưa gửi dữ liệu.</div>
+ <p class="note">Nút gửi hiện dùng số nhập thủ công để kiểm tra đường truyền. Chưa phải kết quả AI.</p>
+</section>
+
+<script>
+let stream=null;
+const $=id=>document.getElementById(id);
+$('start').onclick=async()=>{
+ try{
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+  $('video').srcObject=stream;$('start').disabled=true;$('stop').disabled=false;
+ }catch(e){alert('Không mở được camera. Hãy cho phép trình duyệt dùng camera và mở trang bằng HTTPS. Chi tiết: '+e.message);}
+};
+$('stop').onclick=()=>{
+ if(stream)stream.getTracks().forEach(t=>t.stop());
+ stream=null;$('video').srcObject=null;$('start').disabled=false;$('stop').disabled=true;
+};
+function endpoint(){
+ let ip=$('ip').value.trim().replace(/^https?:\/\//,'').replace(/\/+$/,'');
+ if(!ip)throw new Error('Bạn chưa nhập IP của ESP32-S3.');
+ return 'http://'+ip+'/api/parking';
+}
+$('connect').onclick=async()=>{
+ try{
+  const url=endpoint().replace('/api/parking','/health');
+  $('connection').textContent='Đang kiểm tra '+url+' ...';
+  const r=await fetch(url,{method:'GET'});
+  if(!r.ok)throw new Error('ESP32 trả về HTTP '+r.status);
+  $('connection').textContent='Đã nhận phản hồi từ ESP32-S3.';
+  $('badge').textContent='ĐÃ KẾT NỐI';$('badge').style.color='#16734f';
+ }catch(e){
+  $('connection').textContent='Chưa kết nối: '+e.message+' (ESP32 cần có endpoint /health).';
+  $('badge').textContent='CHƯA KẾT NỐI';$('badge').style.color='#946200';
+ }
+};
+$('send').onclick=async()=>{
+ const n=Math.max(0,Math.min(99,Number($('count').value)||0));
+ $('cars').textContent=n;$('queue').textContent=n;
+ const payload={vehicle_count:n,queue_count:n,source:'phone_test',ai_status:'not_enabled'};
+ try{
+  const r=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  $('result').textContent='Đã gửi dữ liệu thử thành công: '+JSON.stringify(payload);
+ }catch(e){$('result').textContent='Chưa gửi được: '+e.message+'. Cần nạp firmware HTTP server cho ESP32 trước.';}
+};
+</script>
+</body>
+</html>
